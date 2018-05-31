@@ -26,21 +26,38 @@ guests.  When the party's over, change the access point password.
         address 10.3.141.1
         netmask 255.255.255.0
 
-## /etc/network/interfaces.d/station
-
-    allow-hotplug wlan0
-    iface wlan0 inet manual
-        wpa-conf /etc/wpa_supplicant/wpa_supplicant.conf
-
-
 ## /etc/udev/rules.d/90-wireless.rules 
 
     ACTION=="add", SUBSYSTEM=="ieee80211", KERNEL=="phy0", \
         RUN+="/sbin/iw phy %k interface add uap0 type __ap"
 
-## Do not let DHCPCD manage wpa_supplicant!!
+## /lib/dhcpcd/dhcpcd-hooks/10-wpa_supplicant
 
-    rm -f /lib/dhcpcd/dhcpcd-hooks/10-wpa_supplicant
+```sh
+if [ -z "$wpa_supplicant_conf" ]; then
+	for x in \
+		/etc/wpa_supplicant/wpa_supplicant-"$interface".conf \
+		/etc/wpa_supplicant/wpa_supplicant.conf \
+		/etc/wpa_supplicant-"$interface".conf \
+		/etc/wpa_supplicant.conf \
+	; do
+		if [ -s "$x" ]; then
+			wpa_supplicant_conf="$x"
+			break
+		fi
+	done
+fi
+: ${wpa_supplicant_conf:=/etc/wpa_supplicant.conf}
+
+if [ "$ifwireless" = "1" ] && \
+    type wpa_supplicant >/dev/null 2>&1 && \
+    type wpa_cli >/dev/null 2>&1
+then
+	if [ "$reason" = "IPV4LL" ]; then
+		wpa_supplicant -B -iwlan0 -f/var/log/wpa_supplicant.log -c/etc/wpa_supplicant/wpa_supplicant.conf
+	fi
+fi
+```
 
 ## Set up the client wifi (station) on wlan0.
 
@@ -48,38 +65,20 @@ Create `/etc/wpa_supplicant/wpa_supplicant.conf`.  The contents depend on whethe
 probably WPA, and so should look like:
 
     ctrl_interface=DIR=/var/run/wpa_supplicant GROUP=netdev
-    country=GB
+    country=US
     
     network={
 	    ssid="_ST_SSID_"
-	    scan_ssid=1
 	    psk="_ST_PASSWORD_"
 	    key_mgmt=WPA-PSK
     }
 
 Replace `_ST_SSID_` with your home network SSID and `_ST_PASSWORD_` with your wifi password (in clear text).
-
-## Restart DHCPCD
-
-    systemctl restart dhcpcd
-	
-## Bring up the station (client) interface
-
-    ifup wlan0
-	
-At this point your client wifi should be connected.
-
-## Manually invoke the udev rule for the AP interface.
-
-Execute the command below.  This will also bring up the `uap0` interface.  It will wiggle the network, so you might be kicked off (esp. if you
-are logged into your Pi on wifi).  Just log back on.
-
-    /sbin/iw phy phy0 interface add uap0 type __ap
 	
 ## Install the packages you need for DNS, Access Point and Firewall rules.
 
     apt-get update
-	apt-get install hostapd dnsmasq iptables-persistent
+	apt-get install -y hostapd dnsmasq iptables-persistent
 
 ## /etc/dnsmasq.conf
 
@@ -111,30 +110,6 @@ enough characters to be a legal password!  (8 characters minimum).
 
     DAEMON_CONF="/etc/hostapd/hostapd.conf"
 
-## Now restart the dns and hostapd services
-
-    systemctl restart dnsmasq
-    systemctl restart hostapd
-
-## Restart the client interface
-
-I dunno.  The client interface went down for some reason (see below "bringup order").  Bring it back up:
-
-    ifdown wlan0
-	ifup wlan0
-
-## Permanently deal with interface bringup order
-
-    # see https://unix.stackexchange.com/questions/396059/unable-to-establish-connection-with-mlme-connect-failed-ret-1-operation-not-p
-	
-Edit `/etc/rc.local` and add the following lines just before "exit 0":
-
-    sleep 5
-    ifdown wlan0
-    sleep 2
-    rm -f /var/run/wpa_supplicant/wlan0
-    ifup wlan0
-
 ## Bridge AP to cient side
 
 This is optional.  If you do this step, then someone connected to the AP side can browse the internet through the client side.
@@ -147,4 +122,8 @@ This is optional.  If you do this step, then someone connected to the AP side ca
 That's it, you should be good to go.  You should not have needed to reboot your Pi, but if you do then everything you did will
 remain in place and functional.
 
+## REBOOT!
+
+    reboot
+    
 
