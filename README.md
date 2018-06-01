@@ -119,8 +119,6 @@ This is optional.  If you do this step, then someone connected to the AP side ca
 	iptables -t nat -A POSTROUTING -s 10.3.141.0/24 ! -d 10.3.141.0/24 -j MASQUERADE
     iptables-save > /etc/iptables/rules.v4
 
-That's it, you should be good to go.  You should not have needed to reboot your Pi, but if you do then everything you did will
-remain in place and functional.
 
 ## REBOOT!
 
